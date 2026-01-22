@@ -1,0 +1,56 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Build
+dist/
+build/
+
+# Dependencies
+vendor/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Certificates (keep .example files)
+deploy/certs/*
+!deploy/certs/.gitkeep
+
+# Database
+*.db
+*.sqlite
+
+# Test database
+test.db

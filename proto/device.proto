@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package attendance.v1;
+option go_package = "attendance/proto/attendancepb";
+
+service DeviceService {
+  rpc RegisterDevice (DeviceRegisterRequest) returns (DeviceRegisterResponse);
+  rpc CheckIn (CheckInRequest) returns (CheckInResponse);
+  rpc ListEvents (ListEventsRequest) returns (ListEventsResponse);
+}
+
+message DeviceRegisterRequest {
+  string device_id = 1;
+  string device_secret = 2;
+}
+
+message DeviceRegisterResponse {
+  string access_token = 1;
+  int64 expires_at = 2;
+}
+
+message CheckInRequest {
+  string device_id = 1;
+  string user_id = 2;
+  string image_url = 3;
+  string location = 4;
+}
+
+message CheckInResponse {
+  string event_id = 1;
+  int64 recorded_at = 2;
+  string status = 3;
+  double match_score = 4;
+}
+
+message ListEventsRequest {
+  string device_id = 1;
+  string user_id = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message EventItem {
+  string event_id = 1;
+  string user_id = 2;
+  string device_id = 3;
+  int64 recorded_at = 4;
+  string location = 5;
+  string image_url = 6;
+  string status = 7;
+  double match_score = 8;
+}
+
+message ListEventsResponse {
+  repeated EventItem events = 1;
+}

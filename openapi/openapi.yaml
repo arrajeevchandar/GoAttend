@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Attendance Engine API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200': {description: OK}
+  /v1/devices/register:
+    post:
+      summary: Register device and issue tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id: {type: string}
+              required: [device_id]
+      responses:
+        '201':
+          description: issued tokens
+  /v1/checkins:
+    post:
+      summary: Submit a check-in
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: {type: string}
+                device_id: {type: string}
+                location: {type: string}
+                image_url: {type: string}
+              required: [user_id, device_id]
+      responses:
+        '202': {description: accepted}
+  /v1/events:
+    get:
+      summary: List attendance events
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: device_id
+          schema: {type: string}
+        - in: query
+          name: user_id
+          schema: {type: string}
+        - in: query
+          name: limit
+          schema: {type: integer, default: 50}
+        - in: query
+          name: offset
+          schema: {type: integer, default: 0}
+      responses:
+        '200': {description: list returned}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

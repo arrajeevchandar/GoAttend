@@ -1,0 +1,29 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: attendance
+      POSTGRES_DB: attendance
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5 --auth-local=md5"
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  face-svc:
+    image: python:3.11-slim
+    command: python -m http.server 8000
+    ports:
+      - "8000:8000"
+    # placeholder; replace with FastAPI/onnxruntime implementation
+
+volumes:
+  pgdata:

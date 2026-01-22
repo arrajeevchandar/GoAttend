@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+docs/
+*.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files (use build args instead)
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+test/
+tests/
+coverage.*
+
+# Build artifacts (we build fresh)
+bin/
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Temporary
+tmp/
+temp/
+
+# Certificates (mount at runtime)
+deploy/certs/
+
+# Development configs
+deploy/docker-compose.yml
+
+# Makefile (not needed in container)
+Makefile
+
+# Proto files (compiled at build time)
+*.proto
+
+# OpenAPI docs
+openapi/

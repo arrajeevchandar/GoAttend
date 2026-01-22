@@ -1,0 +1,191 @@
+# Production Docker Compose for Attendance Engine
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: attendance-api
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8081}:8081"
+    environment:
+      - APP_ENV=production
+      - HTTP_PORT=8081
+      - DATABASE_URL=postgres://attendance:${DB_PASSWORD:-attendance}@postgres:5432/attendance?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - JWT_SIGNING_KEY=${JWT_SIGNING_KEY:-change-this-in-production}
+      - JWT_ISSUER=${JWT_ISSUER:-attendance-engine}
+      - FACE_SERVICE_URL=http://face-svc:8000
+      - FACE_SKIP=${FACE_SKIP:-false}
+      - QUEUE_BACKEND=redis
+      - RATE_LIMIT_PER_MIN=${RATE_LIMIT_PER_MIN:-120}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - attendance-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Background Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: attendance-worker
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgres://attendance:${DB_PASSWORD:-attendance}@postgres:5432/attendance?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - FACE_SERVICE_URL=http://face-svc:8000
+      - FACE_SKIP=${FACE_SKIP:-false}
+      - QUEUE_BACKEND=redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - attendance-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      replicas: 2
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: attendance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-attendance}
+      POSTGRES_DB: attendance
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5 --auth-local=md5"
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/0001_init.up.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendance -d attendance"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - attendance-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: attendance-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - attendance-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Face Recognition Service with InsightFace
+  face-svc:
+    build:
+      context: ./face-service
+      dockerfile: Dockerfile
+    container_name: attendance-face
+    restart: unless-stopped
+    ports:
+      - "${FACE_PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - MATCH_THRESHOLD=0.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - attendance-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Optional: GPU support - uncomment for CUDA
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Nginx Reverse Proxy (optional, for production)
+  nginx:
+    image: nginx:alpine
+    container_name: attendance-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+    networks:
+      - attendance-network
+    profiles:
+      - with-nginx
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  attendance-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
