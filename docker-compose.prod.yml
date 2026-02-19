@@ -23,6 +23,10 @@ services:
       - FACE_SKIP=${FACE_SKIP:-false}
       - QUEUE_BACKEND=redis
       - RATE_LIMIT_PER_MIN=${RATE_LIMIT_PER_MIN:-120}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME:-}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY:-}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET:-}
+      - CLOUDINARY_FOLDER=${CLOUDINARY_FOLDER:-attendance}
     depends_on:
       postgres:
         condition: service_healthy

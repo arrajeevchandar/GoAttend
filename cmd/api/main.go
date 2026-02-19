@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 
 	"attendance/internal/attendance"
 	"attendance/internal/auth"
+	"attendance/internal/cloudinary"
 	"attendance/internal/config"
 	"attendance/internal/faceclient"
 	"attendance/internal/httpmiddleware"
@@ -59,6 +62,15 @@ func runHTTP(cfg config.App) error {
 	repo := attendance.NewRepository(db.Client)
 	att := attendance.NewService(repo, 5*time.Minute)
 	ctx := context.Background()
+
+	// Cloudinary client (nil when not configured)
+	var cdnClient *cloudinary.Client
+	if cfg.CloudinaryCloudName != "" && cfg.CloudinaryAPIKey != "" && cfg.CloudinaryAPISecret != "" {
+		cdnClient = cloudinary.New(cfg.CloudinaryCloudName, cfg.CloudinaryAPIKey, cfg.CloudinaryAPISecret, cfg.CloudinaryFolder)
+		log.Println("Cloudinary configured:", cfg.CloudinaryCloudName)
+	} else {
+		log.Println("Cloudinary not configured (CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET not set)")
+	}
 
 	r := gin.New()
 	
@@ -120,7 +132,62 @@ func runHTTP(cfg config.App) error {
 		})
 	})
 
+	// Upload endpoint — uploads a base64 image or multipart file to Cloudinary
+	// Returns the public Cloudinary URL so the caller can use it in /v1/checkins
 	authGroup := r.Group("/v1", auth.DeviceAuth(cfg.JWTSigningKey, cfg.JWTIssuer))
+
+	authGroup.POST("/upload", func(c *gin.Context) {
+		if cdnClient == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "image storage not configured"})
+			return
+		}
+
+		contentType := c.ContentType()
+		var result *cloudinary.UploadResult
+		var err error
+
+		switch {
+		case strings.Contains(contentType, "multipart/form-data"):
+			// Multipart file upload
+			file, header, ferr := c.Request.FormFile("file")
+			if ferr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "file field required"})
+				return
+			}
+			defer file.Close()
+			data, ferr := io.ReadAll(file)
+			if ferr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "read file failed"})
+				return
+			}
+			result, err = cdnClient.UploadBytes(data, header.Filename)
+
+		default:
+			// JSON body with base64 data URL
+			var body struct {
+				Data string `json:"data" binding:"required"`
+			}
+			if berr := c.ShouldBindJSON(&body); berr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "provide {\"data\": \"<base64 data URL>\"}"})
+				return
+			}
+			result, err = cdnClient.UploadBase64(body.Data)
+		}
+
+		if err != nil {
+			log.Printf("cloudinary upload failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "image upload failed"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"url":       result.SecureURL,
+			"public_id": result.PublicID,
+			"width":     result.Width,
+			"height":    result.Height,
+			"bytes":     result.Bytes,
+		})
+	})
 
 	authGroup.POST("/checkins", func(c *gin.Context) {
 		var req struct {

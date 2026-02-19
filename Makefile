@@ -46,7 +46,12 @@ dev:
 	@echo "Run 'make run-api' in another terminal to start the API"
 
 run-api:
-	FACE_SKIP=true go run ./cmd/api
+	FACE_SKIP=true \
+	CLOUDINARY_CLOUD_NAME=$(CLOUDINARY_CLOUD_NAME) \
+	CLOUDINARY_API_KEY=$(CLOUDINARY_API_KEY) \
+	CLOUDINARY_API_SECRET=$(CLOUDINARY_API_SECRET) \
+	CLOUDINARY_FOLDER=attendance \
+	go run ./cmd/api
 
 run-worker:
 	go run ./cmd/worker

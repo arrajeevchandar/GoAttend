@@ -22,6 +22,11 @@ type App struct {
 	FaceSkip        bool
 	QueueBackend    string
 	RateLimitPerMin int
+	// Cloudinary
+	CloudinaryCloudName string
+	CloudinaryAPIKey    string
+	CloudinaryAPISecret string
+	CloudinaryFolder    string
 }
 
 // Load returns application config populated from environment variables with sensible defaults.
@@ -40,6 +45,11 @@ func Load() App {
 		FaceSkip:        boolEnv("FACE_SKIP", true),
 		QueueBackend:    getEnv("QUEUE_BACKEND", "redis"),
 		RateLimitPerMin: intEnv("RATE_LIMIT_PER_MIN", 120),
+		// Cloudinary
+		CloudinaryCloudName: getEnv("CLOUDINARY_CLOUD_NAME", ""),
+		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
+		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
+		CloudinaryFolder:    getEnv("CLOUDINARY_FOLDER", "attendance"),
 	}
 }
 

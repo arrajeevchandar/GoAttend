@@ -341,6 +341,33 @@ async function submitCheckin() {
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
     
     try {
+        // Upload local image (base64 / file) to Cloudinary first; skip for plain URLs
+        const isLocalImage = finalImageUrl.startsWith('data:');
+        if (isLocalImage) {
+            submitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt fa-spin mr-2"></i>Uploading image...';
+            const uploadRes = await fetch(`${API_BASE}/v1/upload`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ data: finalImageUrl })
+            });
+            const uploadData = await uploadRes.json();
+            if (!uploadRes.ok) {
+                // Fall back to base64 URL if Cloudinary is not configured
+                if (uploadRes.status === 503) {
+                    console.warn('Cloudinary not configured, falling back to base64');
+                } else {
+                    showResult(resultEl, uploadData.error || 'Image upload failed', 'error');
+                    return;
+                }
+            } else {
+                finalImageUrl = uploadData.url;
+            }
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Submitting check-in...';
+        }
+
         const res = await fetch(`${API_BASE}/v1/checkins`, {
             method: 'POST',
             headers: {

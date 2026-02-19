@@ -19,11 +19,23 @@ services:
       - "6379:6379"
 
   face-svc:
-    image: python:3.11-slim
-    command: python -m http.server 8000
+    build:
+      context: ../face-service
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    # placeholder; replace with FastAPI/onnxruntime implementation
+    environment:
+      - PORT=8000
+      - MATCH_THRESHOLD=0.5
+    volumes:
+      - face_models:/root/.insightface  # Cache downloaded models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Model loading takes time
 
 volumes:
   pgdata:
+  face_models:
