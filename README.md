@@ -59,6 +59,8 @@ make run-api
 
 # In another terminal, run the worker
 make run-worker
+
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
 Or manually:

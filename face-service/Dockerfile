@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     g++ \
+    libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -25,11 +26,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 # This caches the model in the image so container starts faster
 RUN python -c "from insightface.app import FaceAnalysis; \
     app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); \
-    app.prepare(ctx_id=0, det_size=(640, 640)); \
+    app.prepare(ctx_id=-1, det_size=(640, 640)); \
     print('Model downloaded successfully')" || echo "Model download skipped (will download on first use)"
 
 # Copy application code
 COPY main.py .
+
+# Environment variables with defaults
+ENV PORT=8000
+ENV MATCH_THRESHOLD=0.45
+ENV QUALITY_THRESHOLD=0.3
+ENV DETECTION_SIZE=640
+ENV USE_GPU=false
+ENV REDIS_URL=""
 
 # Expose port
 EXPOSE 8000

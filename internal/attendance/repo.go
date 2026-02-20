@@ -165,3 +165,80 @@ func joinClauses(parts []string, sep string) string {
 	}
 	return out
 }
+
+// Employee represents a registered employee.
+type Employee struct {
+	ID           string     `json:"id"`
+	EmployeeID   string     `json:"employee_id"`
+	Name         *string    `json:"name,omitempty"`
+	Email        *string    `json:"email,omitempty"`
+	Department   *string    `json:"department,omitempty"`
+	FaceEnrolled bool       `json:"face_enrolled"`
+	EnrolledAt   *time.Time `json:"enrolled_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// ListEmployees returns all employees.
+func (r *Repository) ListEmployees(ctx context.Context) ([]Employee, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, employee_id, name, email, department, face_enrolled, enrolled_at, created_at
+		FROM employees
+		ORDER BY employee_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var employees []Employee
+	for rows.Next() {
+		var e Employee
+		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.Name, &e.Email, &e.Department, &e.FaceEnrolled, &e.EnrolledAt, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		employees = append(employees, e)
+	}
+	return employees, rows.Err()
+}
+
+// GetEmployee returns a single employee by employee_id.
+func (r *Repository) GetEmployee(ctx context.Context, employeeID string) (*Employee, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, employee_id, name, email, department, face_enrolled, enrolled_at, created_at
+		FROM employees WHERE employee_id = $1
+	`, employeeID)
+	var e Employee
+	if err := row.Scan(&e.ID, &e.EmployeeID, &e.Name, &e.Email, &e.Department, &e.FaceEnrolled, &e.EnrolledAt, &e.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &e, nil
+}
+
+// UpsertEmployee creates or updates an employee.
+func (r *Repository) UpsertEmployee(ctx context.Context, employeeID string, name *string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO employees (employee_id, name)
+		VALUES ($1, $2)
+		ON CONFLICT (employee_id) DO UPDATE SET
+			name = COALESCE(EXCLUDED.name, employees.name),
+			updated_at = NOW()
+	`, employeeID, name)
+	return err
+}
+
+// SetEmployeeFaceEnrolled marks an employee as face-enrolled.
+func (r *Repository) SetEmployeeFaceEnrolled(ctx context.Context, employeeID string, enrolled bool) error {
+	var enrolledAt interface{} = nil
+	if enrolled {
+		enrolledAt = time.Now().UTC()
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE employees
+		SET face_enrolled = $2, enrolled_at = $3, updated_at = NOW()
+		WHERE employee_id = $1
+	`, employeeID, enrolled, enrolledAt)
+	return err
+}

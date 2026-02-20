@@ -213,8 +213,102 @@ function capturePhoto() {
 function retakePhoto() {
     capturedImageData = null;
     document.getElementById('capturedPreview').classList.add('hidden');
+    document.getElementById('identifyResult').classList.add('hidden');
     document.getElementById('cameraContainer').classList.remove('hidden');
     startCamera();
+}
+
+async function identifyFromCamera() {
+    if (!capturedImageData) {
+        showToast('Please capture a photo first', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('identifyBtn');
+    const resultDiv = document.getElementById('identifyResult');
+    const successDiv = document.getElementById('identifySuccess');
+    const failDiv = document.getElementById('identifyFail');
+    
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Identifying...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/identify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_data: capturedImageData,
+                top_k: 3
+            })
+        });
+        
+        const data = await response.json();
+        resultDiv.classList.remove('hidden');
+        
+        if (response.ok) {
+            if (data.identified && data.best_match) {
+                // Show success
+                successDiv.classList.remove('hidden');
+                failDiv.classList.add('hidden');
+                resultDiv.className = 'mt-3 p-4 rounded-lg bg-green-50 border border-green-200';
+                
+                document.getElementById('identifiedName').textContent = data.best_match.name || data.best_match.user_id;
+                document.getElementById('identifiedId').textContent = `ID: ${data.best_match.user_id}`;
+                
+                const confidence = (data.best_match.similarity * 100).toFixed(1);
+                document.getElementById('identifyConfidence').textContent = `${confidence}%`;
+                document.getElementById('identifyConfBar').style.width = `${confidence}%`;
+                
+                // Liveness badge
+                const livenessEl = document.getElementById('identifyLiveness');
+                if (data.liveness && data.liveness.is_live) {
+                    livenessEl.className = 'px-2 py-1 rounded-full bg-green-100 text-green-700';
+                    livenessEl.innerHTML = '<i class="fas fa-shield-alt mr-1"></i>Live';
+                } else {
+                    livenessEl.className = 'px-2 py-1 rounded-full bg-red-100 text-red-700';
+                    livenessEl.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i>Check Liveness';
+                }
+                
+                // Quality badge
+                if (data.quality) {
+                    const qualityPct = (data.quality.score * 100).toFixed(0);
+                    document.getElementById('identifyQuality').innerHTML = `<i class="fas fa-star mr-1"></i>Quality: ${qualityPct}%`;
+                }
+                
+                // Auto-fill the employee ID for check-in
+                document.getElementById('userIdInput').value = data.best_match.user_id;
+                
+                showToast(`Identified: ${data.best_match.name || data.best_match.user_id}`, 'success');
+            } else {
+                // No match found
+                successDiv.classList.add('hidden');
+                failDiv.classList.remove('hidden');
+                resultDiv.className = 'mt-3 p-4 rounded-lg bg-red-50 border border-red-200';
+                
+                showToast('No match found in gallery', 'error');
+            }
+        } else {
+            successDiv.classList.add('hidden');
+            failDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-3 p-4 rounded-lg bg-red-50 border border-red-200';
+            
+            const errorMsg = data.detail || 'Identification failed';
+            document.querySelector('#identifyFail p.text-sm').textContent = errorMsg;
+            showToast(errorMsg, 'error');
+        }
+        
+    } catch (err) {
+        resultDiv.classList.remove('hidden');
+        successDiv.classList.add('hidden');
+        failDiv.classList.remove('hidden');
+        resultDiv.className = 'mt-3 p-4 rounded-lg bg-red-50 border border-red-200';
+        
+        document.querySelector('#identifyFail p.text-sm').textContent = `Error: ${err.message}`;
+        showToast(`Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-user-check mr-2"></i> Identify Person';
+    }
 }
 
 // File handling
@@ -668,6 +762,484 @@ function fileToDataUrl(file) {
     });
 }
 
+// ============ Face Recognition Testing Functions ============
+
+const FACE_SERVICE_URL = 'http://localhost:8000';
+
+async function checkFaceService() {
+    const statusText = document.getElementById('faceServiceStatusText');
+    const outputDiv = document.getElementById('faceTestOutput');
+    const resultsDiv = document.getElementById('faceTestResults');
+    
+    // Elements may not exist if dashboard is hidden
+    if (!statusText) return;
+    
+    try {
+        statusText.textContent = 'Checking...';
+        statusText.className = 'text-sm font-medium text-yellow-500';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/health`);
+        const data = await response.json();
+        
+        if (data.status === 'ok') {
+            statusText.textContent = `✓ ${data.model_name}`;
+            statusText.className = 'text-sm font-medium text-green-600';
+        } else {
+            statusText.textContent = '✗ Unhealthy';
+            statusText.className = 'text-sm font-medium text-red-500';
+        }
+        
+        // Show output
+        if (resultsDiv) resultsDiv.classList.remove('hidden');
+        if (outputDiv) outputDiv.textContent = JSON.stringify(data, null, 2);
+        
+        showToast('Face service connected!', 'success');
+    } catch (err) {
+        statusText.textContent = '✗ Offline';
+        statusText.className = 'text-sm font-medium text-red-500';
+        
+        if (resultsDiv) resultsDiv.classList.remove('hidden');
+        if (outputDiv) outputDiv.textContent = `Error: ${err.message}\n\nMake sure face service is running:\n  docker compose -f deploy/docker-compose.yml up -d`;
+        
+        showToast('Face service not reachable', 'error');
+    }
+}
+
+async function testFaceEmbed() {
+    const imageUrl = document.getElementById('testImageUrl').value.trim();
+    const outputDiv = document.getElementById('faceTestOutput');
+    const resultsDiv = document.getElementById('faceTestResults');
+    const qualityDiv = document.getElementById('qualityMetrics');
+    const livenessDiv = document.getElementById('livenessResults');
+    
+    if (!imageUrl) {
+        showToast('Please enter an image URL', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.getElementById('testEmbedBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Testing...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/embed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: imageUrl })
+        });
+        
+        const data = await response.json();
+        
+        resultsDiv.classList.remove('hidden');
+        livenessDiv.classList.add('hidden');
+        
+        if (response.ok) {
+            // Truncate embedding for display
+            const displayData = { ...data };
+            if (displayData.embedding) {
+                displayData.embedding = `[${data.embedding.slice(0, 5).map(n => n.toFixed(3)).join(', ')}... (512 dims)]`;
+            }
+            outputDiv.textContent = JSON.stringify(displayData, null, 2);
+            
+            // Show quality metrics
+            if (data.quality) {
+                showQualityMetrics(data.quality, data.score);
+            }
+            
+            showToast(`Face detected! Score: ${(data.score * 100).toFixed(1)}%`, 'success');
+        } else {
+            outputDiv.textContent = JSON.stringify(data, null, 2);
+            qualityDiv.classList.add('hidden');
+            showToast(data.detail || 'Face detection failed', 'error');
+        }
+        
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Detect Face';
+    } catch (err) {
+        resultsDiv.classList.remove('hidden');
+        outputDiv.textContent = `Error: ${err.message}`;
+        showToast('Request failed', 'error');
+        
+        document.getElementById('testEmbedBtn').disabled = false;
+        document.getElementById('testEmbedBtn').innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Detect Face';
+    }
+}
+
+async function testLiveness() {
+    const imageUrl = document.getElementById('testImageUrl').value.trim();
+    const outputDiv = document.getElementById('faceTestOutput');
+    const resultsDiv = document.getElementById('faceTestResults');
+    const livenessDiv = document.getElementById('livenessResults');
+    const qualityDiv = document.getElementById('qualityMetrics');
+    
+    if (!imageUrl) {
+        showToast('Please enter an image URL', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.getElementById('testLivenessBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Testing...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/liveness`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: imageUrl })
+        });
+        
+        const data = await response.json();
+        
+        resultsDiv.classList.remove('hidden');
+        qualityDiv.classList.add('hidden');
+        
+        if (response.ok) {
+            outputDiv.textContent = JSON.stringify(data, null, 2);
+            showLivenessResults(data);
+            showToast(data.is_live ? 'Live face detected!' : 'Possible spoof detected', data.is_live ? 'success' : 'error');
+        } else {
+            outputDiv.textContent = JSON.stringify(data, null, 2);
+            livenessDiv.classList.add('hidden');
+            showToast(data.detail || 'Liveness check failed', 'error');
+        }
+        
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-user-shield mr-1"></i> Liveness';
+    } catch (err) {
+        resultsDiv.classList.remove('hidden');
+        outputDiv.textContent = `Error: ${err.message}`;
+        showToast('Request failed', 'error');
+        
+        document.getElementById('testLivenessBtn').disabled = false;
+        document.getElementById('testLivenessBtn').innerHTML = '<i class="fas fa-user-shield mr-1"></i> Liveness';
+    }
+}
+
+async function testAnalyze() {
+    const imageUrl = document.getElementById('testImageUrl').value.trim();
+    const outputDiv = document.getElementById('faceTestOutput');
+    const resultsDiv = document.getElementById('faceTestResults');
+    const qualityDiv = document.getElementById('qualityMetrics');
+    const livenessDiv = document.getElementById('livenessResults');
+    
+    if (!imageUrl) {
+        showToast('Please enter an image URL', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.getElementById('testAnalyzeBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Analyzing...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/analyze?image_url=${encodeURIComponent(imageUrl)}`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        resultsDiv.classList.remove('hidden');
+        
+        if (response.ok) {
+            outputDiv.textContent = JSON.stringify(data, null, 2);
+            
+            if (data.faces && data.faces.length > 0) {
+                const face = data.faces[0];
+                if (face.quality) {
+                    showQualityMetrics(face.quality, face.detection_score);
+                }
+                if (face.liveness) {
+                    showLivenessResults(face.liveness);
+                }
+                
+                let info = `Faces detected: ${data.faces_detected}`;
+                if (face.age) info += `, Age: ~${face.age}`;
+                if (face.gender) info += `, Gender: ${face.gender}`;
+                showToast(info, 'success');
+            } else {
+                qualityDiv.classList.add('hidden');
+                livenessDiv.classList.add('hidden');
+                showToast('No faces detected', 'error');
+            }
+        } else {
+            outputDiv.textContent = JSON.stringify(data, null, 2);
+            qualityDiv.classList.add('hidden');
+            livenessDiv.classList.add('hidden');
+            showToast(data.detail || 'Analysis failed', 'error');
+        }
+        
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-microscope mr-1"></i> Full Analysis';
+    } catch (err) {
+        resultsDiv.classList.remove('hidden');
+        outputDiv.textContent = `Error: ${err.message}`;
+        showToast('Request failed', 'error');
+        
+        document.getElementById('testAnalyzeBtn').disabled = false;
+        document.getElementById('testAnalyzeBtn').innerHTML = '<i class="fas fa-microscope mr-1"></i> Full Analysis';
+    }
+}
+
+function showQualityMetrics(quality, detectionScore) {
+    const qualityDiv = document.getElementById('qualityMetrics');
+    qualityDiv.classList.remove('hidden');
+    
+    // Overall quality
+    const qScore = quality.score * 100;
+    document.getElementById('qualityScore').textContent = `${qScore.toFixed(1)}%`;
+    document.getElementById('qualityBar').style.width = `${qScore}%`;
+    document.getElementById('qualityBar').className = `h-full rounded-full transition-all ${qScore > 70 ? 'bg-green-500' : qScore > 40 ? 'bg-yellow-500' : 'bg-red-500'}`;
+    
+    // Detection confidence
+    const dScore = (detectionScore || 0) * 100;
+    document.getElementById('detectionScore').textContent = `${dScore.toFixed(1)}%`;
+    document.getElementById('detectionBar').style.width = `${dScore}%`;
+    
+    // Blur (inverse - lower blur = better)
+    const sharpness = (1 - quality.blur) * 100;
+    document.getElementById('blurScore').textContent = `${sharpness.toFixed(1)}%`;
+    document.getElementById('blurBar').style.width = `${sharpness}%`;
+    document.getElementById('blurBar').className = `h-full rounded-full transition-all ${sharpness > 70 ? 'bg-purple-500' : sharpness > 40 ? 'bg-yellow-500' : 'bg-red-500'}`;
+    
+    // Pose angles
+    document.getElementById('poseYaw').textContent = `${quality.pose_yaw?.toFixed(1) || 0}°`;
+    document.getElementById('posePitch').textContent = `${quality.pose_pitch?.toFixed(1) || 0}°`;
+    document.getElementById('poseRoll').textContent = `${quality.pose_roll?.toFixed(1) || 0}°`;
+    
+    // Frontal badge
+    const frontalBadge = document.getElementById('frontalBadge');
+    if (quality.is_frontal) {
+        frontalBadge.classList.remove('hidden');
+    } else {
+        frontalBadge.classList.add('hidden');
+    }
+}
+
+function showLivenessResults(liveness) {
+    const livenessDiv = document.getElementById('livenessResults');
+    livenessDiv.classList.remove('hidden');
+    
+    const statusDiv = document.getElementById('livenessStatus');
+    const icon = document.getElementById('livenessIcon');
+    const text = document.getElementById('livenessText');
+    const confidence = document.getElementById('livenessConfidence');
+    const checksDiv = document.getElementById('livenessChecks');
+    
+    if (liveness.is_live) {
+        statusDiv.className = 'p-3 rounded-lg text-center bg-green-100';
+        icon.className = 'fas fa-user-check text-4xl mb-2 text-green-600';
+        text.textContent = 'LIVE FACE';
+        text.className = 'font-medium text-green-800';
+    } else {
+        statusDiv.className = 'p-3 rounded-lg text-center bg-red-100';
+        icon.className = 'fas fa-user-slash text-4xl mb-2 text-red-600';
+        text.textContent = 'POSSIBLE SPOOF';
+        text.className = 'font-medium text-red-800';
+    }
+    
+    confidence.textContent = `Confidence: ${(liveness.confidence * 100).toFixed(1)}%`;
+    
+    // Show individual checks
+    if (liveness.checks) {
+        checksDiv.innerHTML = Object.entries(liveness.checks)
+            .map(([key, value]) => {
+                const score = typeof value === 'number' ? value : 0.5;
+                const color = score > 0.7 ? 'text-green-600' : score > 0.4 ? 'text-yellow-600' : 'text-red-600';
+                const name = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `<div class="flex justify-between"><span class="text-gray-500">${name}</span><span class="${color} font-medium">${(score * 100).toFixed(0)}%</span></div>`;
+            })
+            .join('');
+    }
+}
+
+// ============ Face Gallery Functions ============
+
+async function enrollFace() {
+    const userId = document.getElementById('enrollUserId').value.trim();
+    const name = document.getElementById('enrollName').value.trim();
+    const imageUrl = document.getElementById('enrollImageUrl').value.trim();
+    
+    if (!userId) {
+        showToast('Please enter a User ID', 'error');
+        return;
+    }
+    if (!imageUrl) {
+        showToast('Please enter an image URL', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('enrollBtn');
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enrolling...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/enroll`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                image_url: imageUrl,
+                name: name || null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showToast(`Enrolled ${userId} successfully!`, 'success');
+            document.getElementById('enrollUserId').value = '';
+            document.getElementById('enrollName').value = '';
+            document.getElementById('enrollImageUrl').value = '';
+            refreshGallery();
+        } else {
+            showToast(data.message || data.detail || 'Enrollment failed', 'error');
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plus-circle mr-1"></i> Enroll Face';
+    }
+}
+
+async function searchFace() {
+    const imageUrl = document.getElementById('searchImageUrl').value.trim();
+    const resultsDiv = document.getElementById('searchResults');
+    const matchList = document.getElementById('searchMatchList');
+    
+    if (!imageUrl) {
+        showToast('Please enter an image URL to search', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('searchBtn');
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Searching...';
+        
+        const response = await fetch(`${FACE_SERVICE_URL}/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_url: imageUrl,
+                top_k: 5
+            })
+        });
+        
+        const data = await response.json();
+        resultsDiv.classList.remove('hidden');
+        
+        if (response.ok) {
+            if (data.matches && data.matches.length > 0) {
+                matchList.innerHTML = data.matches.map((match, i) => {
+                    const similarity = (match.similarity * 100).toFixed(1);
+                    const barColor = match.similarity > 0.7 ? 'bg-green-500' : match.similarity > 0.5 ? 'bg-yellow-500' : 'bg-red-500';
+                    const matchIcon = i === 0 && match.similarity > 0.6 ? '<i class="fas fa-check-circle text-green-500 ml-2"></i>' : '';
+                    return `
+                        <div class="p-2 bg-gray-50 rounded-lg">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium text-sm">${match.name || match.user_id}${matchIcon}</span>
+                                <span class="text-xs text-gray-500">${similarity}%</span>
+                            </div>
+                            <div class="h-1.5 bg-gray-200 rounded-full">
+                                <div class="h-full ${barColor} rounded-full" style="width: ${similarity}%"></div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">ID: ${match.user_id}</p>
+                        </div>
+                    `;
+                }).join('');
+                showToast(`Found ${data.matches.length} match(es)`, 'success');
+            } else {
+                matchList.innerHTML = '<p class="text-sm text-gray-500 text-center py-2">No matches found</p>';
+                showToast('No matches found in gallery', 'info');
+            }
+        } else {
+            matchList.innerHTML = `<p class="text-sm text-red-500">${data.detail || 'Search failed'}</p>`;
+            showToast(data.detail || 'Search failed', 'error');
+        }
+    } catch (err) {
+        resultsDiv.classList.remove('hidden');
+        matchList.innerHTML = `<p class="text-sm text-red-500">Error: ${err.message}</p>`;
+        showToast(`Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-search mr-1"></i> Find Matches';
+    }
+}
+
+async function refreshGallery() {
+    const listDiv = document.getElementById('galleryList');
+    const countDiv = document.getElementById('galleryCount');
+    
+    // Get auth token
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+        listDiv.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">Login to view employees</p>';
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/v1/employees`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        if (response.ok) {
+            const employees = data.employees || [];
+            countDiv.textContent = `${employees.length} employee(s) registered`;
+            
+            if (employees.length === 0) {
+                listDiv.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">No employees registered yet</p>';
+            } else {
+                listDiv.innerHTML = employees.map(emp => `
+                    <div class="flex items-center p-2 bg-gray-50 rounded hover:bg-gray-100 transition">
+                        <div class="w-8 h-8 ${emp.face_enrolled ? 'bg-green-100' : 'bg-gray-100'} rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-user ${emp.face_enrolled ? 'text-green-600' : 'text-gray-400'} text-sm"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium text-gray-800">${emp.name || emp.employee_id}</p>
+                            <p class="text-xs text-gray-400">ID: ${emp.employee_id}</p>
+                        </div>
+                        ${emp.face_enrolled ? '<span class="text-xs text-green-600"><i class="fas fa-check-circle"></i></span>' : '<span class="text-xs text-gray-400" title="Face not enrolled"><i class="fas fa-exclamation-circle"></i></span>'}
+                    </div>
+                `).join('');
+            }
+        } else {
+            listDiv.innerHTML = '<p class="text-sm text-red-500 text-center py-2">Failed to load employees</p>';
+        }
+    } catch (err) {
+        listDiv.innerHTML = '<p class="text-sm text-red-500 text-center py-2">API unavailable</p>';
+    }
+}
+
+async function deleteFromGallery(userId) {
+    if (!confirm(`Remove ${userId} from gallery?`)) return;
+    
+    try {
+        const response = await fetch(`${FACE_SERVICE_URL}/enroll/${encodeURIComponent(userId)}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showToast(`Removed ${userId}`, 'success');
+            refreshGallery();
+        } else {
+            const data = await response.json();
+            showToast(data.detail || 'Delete failed', 'error');
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+// Check face service on load
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        checkFaceService();
+        refreshGallery();
+    }, 1000);
+});
+
 // Expose functions globally
 window.logout = logout;
 window.refreshEvents = refreshEvents;
@@ -676,3 +1248,13 @@ window.startCamera = startCamera;
 window.stopCamera = stopCamera;
 window.capturePhoto = capturePhoto;
 window.retakePhoto = retakePhoto;
+window.identifyFromCamera = identifyFromCamera;
+window.checkFaceService = checkFaceService;
+window.testFaceEmbed = testFaceEmbed;
+window.testLiveness = testLiveness;
+window.testAnalyze = testAnalyze;
+window.enrollFace = enrollFace;
+window.searchFace = searchFace;
+window.refreshGallery = refreshGallery;
+window.deleteFromGallery = deleteFromGallery;
+

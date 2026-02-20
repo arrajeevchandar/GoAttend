@@ -73,21 +73,21 @@ func runHTTP(cfg config.App) error {
 	}
 
 	r := gin.New()
-	
+
 	// Recovery middleware
 	r.Use(gin.Recovery())
-	
+
 	// Custom logger
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		SkipPaths: []string{"/healthz", "/metrics"},
 	}))
-	
+
 	// CORS middleware
 	r.Use(corsMiddleware())
-	
+
 	// Security headers
 	r.Use(securityHeaders())
-	
+
 	// Rate limiting
 	r.Use(httpmiddleware.NewSimpleTokenBucket(cfg.RateLimitPerMin, cfg.RateLimitPerMin).GinMiddleware())
 
@@ -243,6 +243,31 @@ func runHTTP(cfg config.App) error {
 		c.JSON(http.StatusOK, gin.H{"events": events})
 	})
 
+	// List employees
+	authGroup.GET("/employees", func(c *gin.Context) {
+		employees, err := repo.ListEmployees(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"employees": employees})
+	})
+
+	// Get single employee
+	authGroup.GET("/employees/:id", func(c *gin.Context) {
+		employeeID := c.Param("id")
+		emp, err := repo.GetEmployee(c.Request.Context(), employeeID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if emp == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "employee not found"})
+			return
+		}
+		c.JSON(http.StatusOK, emp)
+	})
+
 	r.StaticFile("/", "web/index.html")
 	r.Static("/static", "web/static")
 
@@ -288,7 +313,7 @@ func corsMiddleware() gin.HandlerFunc {
 		if origin == "" {
 			origin = "*"
 		}
-		
+
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
@@ -311,12 +336,12 @@ func securityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		
+
 		// Only add HSTS in production
 		if gin.Mode() == gin.ReleaseMode {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
-		
+
 		c.Next()
 	}
 }
