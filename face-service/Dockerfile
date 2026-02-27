@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     g++ \
     libopenblas-dev \
+    ca-certificates \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

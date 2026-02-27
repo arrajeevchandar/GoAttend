@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login / Attendance - GoAttend</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="navbar">
+        <a href="/" class="logo">GoAttend</a>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/attendance">Login</a>
+            <a href="/students">Students</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h2 class="page-title">Face Login — Mark Attendance</h2>
+
+        <!-- Camera capture for face login -->
+        <div class="card" id="loginCard">
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                Look at the camera and click <strong>Login</strong> to mark your attendance.
+            </p>
+
+            <div class="camera-container" id="cameraBox" style="display:none;">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div style="display:flex; gap:0.75rem; margin-top:1rem; flex-wrap:wrap;">
+                <button class="btn btn-primary" id="startCameraBtn">📷 Open Camera</button>
+                <button class="btn btn-success" id="loginBtn" style="display:none;">Login</button>
+            </div>
+
+            <!-- Result -->
+            <div id="resultBox" style="display:none; margin-top:1.5rem;"></div>
+        </div>
+
+        <!-- Recent attendance -->
+        <div class="card">
+            <h3 style="margin-bottom: 1rem;">Recent Attendance</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Name</th><th>Status</th><th>Time</th></tr>
+                    </thead>
+                    <tbody id="attendanceTable">
+                        <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        let stream = null;
+
+        // Start camera
+        document.getElementById('startCameraBtn').addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: 480, height: 360 }
+                });
+                video.srcObject = stream;
+                document.getElementById('cameraBox').style.display = 'block';
+                document.getElementById('loginBtn').style.display = 'inline-flex';
+                document.getElementById('startCameraBtn').textContent = '📷 Camera Active';
+                document.getElementById('startCameraBtn').disabled = true;
+            } catch (e) {
+                showToast('Camera access denied', 'error');
+            }
+        });
+
+        // Login: capture frame and send to /api/face-login
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = true;
+            btn.textContent = 'Recognizing...';
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            canvas.toBlob(async (blob) => {
+                const fd = new FormData();
+                fd.append('photo', blob, 'login.jpg');
+
+                try {
+                    const res = await fetch('/api/face-login', { method: 'POST', body: fd });
+                    const data = await res.json();
+
+                    const box = document.getElementById('resultBox');
+                    box.style.display = 'block';
+
+                    if (data.matched) {
+                        box.innerHTML = `
+                            <div class="login-result">
+                                <div class="check">✅</div>
+                                <h3>Welcome, ${data.student.name}!</h3>
+                                <p>Roll: ${data.student.student_id} &bull; ${data.student.department || ''}</p>
+                                <p style="margin-top:0.5rem;">Attendance marked at ${formatDate(data.attendance.timestamp)}</p>
+                            </div>
+                        `;
+                        showToast(`Attendance marked for ${data.student.name}!`);
+                        loadAttendance();
+                    } else {
+                        box.innerHTML = `
+                            <div class="login-result">
+                                <div class="check">❌</div>
+                                <h3>Face Not Recognized</h3>
+                                <p>${data.error || 'Please register first or try again.'}</p>
+                            </div>
+                        `;
+                        showToast('Face not recognized', 'error');
+                    }
+                } catch (err) {
+                    showToast(err.message || 'Login failed', 'error');
+                }
+
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }, 'image/jpeg', 0.9);
+        });
+
+        // Load attendance table
+        async function loadAttendance() {
+            const tbody = document.getElementById('attendanceTable');
+            try {
+                const records = await apiGet('/attendance?limit=30');
+                if (records.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">No records yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = records.map(r => `
+                    <tr>
+                        <td><strong>${r.name || r.student_id}</strong></td>
+                        <td><span class="badge badge-success">${r.status}</span></td>
+                        <td>${formatDate(r.timestamp)}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="3" style="color:var(--danger);">${e.message}</td></tr>`;
+            }
+        }
+        loadAttendance();
+    </script>
+</body>
+</html>

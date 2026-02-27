@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - GoAttend</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="navbar">
+        <a href="/" class="logo">GoAttend</a>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/attendance">Login</a>
+            <a href="/students">Students</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h2 class="page-title">Register New Student</h2>
+
+        <div class="card">
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input type="text" id="name" placeholder="John Doe" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" placeholder="john@college.edu" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentId">Roll Number</label>
+                    <input type="text" id="studentId" placeholder="CS2024001" required>
+                </div>
+                <div class="form-group">
+                    <label for="department">Department</label>
+                    <select id="department">
+                        <option value="">Select department</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Electronics">Electronics</option>
+                        <option value="Mechanical">Mechanical</option>
+                        <option value="Civil">Civil</option>
+                        <option value="Electrical">Electrical</option>
+                    </select>
+                </div>
+
+                <!-- Photo capture -->
+                <div class="form-group">
+                    <label>Face Photo (required)</label>
+                    <div class="camera-container" id="cameraBox" style="display:none;">
+                        <video id="video" autoplay playsinline></video>
+                        <canvas id="canvas"></canvas>
+                    </div>
+                    <div style="display:flex; gap:0.75rem; margin-top:0.5rem; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-primary" id="startCameraBtn">📷 Open Camera</button>
+                        <button type="button" class="btn btn-success" id="captureBtn" style="display:none;">Capture</button>
+                        <label class="btn btn-primary" style="cursor:pointer;">
+                            📁 Upload File
+                            <input type="file" id="fileInput" accept="image/*" style="display:none;">
+                        </label>
+                    </div>
+                    <div id="previewWrap" style="margin-top:1rem; display:none;">
+                        <img id="preview" class="photo-preview" alt="Preview">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submitBtn">Register</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        let capturedBlob = null;
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+
+        // Camera
+        document.getElementById('startCameraBtn').addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: 480, height: 360 }
+                });
+                video.srcObject = stream;
+                document.getElementById('cameraBox').style.display = 'block';
+                document.getElementById('captureBtn').style.display = 'inline-flex';
+                document.getElementById('startCameraBtn').style.display = 'none';
+            } catch (e) {
+                showToast('Camera access denied', 'error');
+            }
+        });
+
+        // Capture
+        document.getElementById('captureBtn').addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            canvas.toBlob(blob => {
+                capturedBlob = blob;
+                document.getElementById('preview').src = URL.createObjectURL(blob);
+                document.getElementById('previewWrap').style.display = 'block';
+            }, 'image/jpeg', 0.9);
+            video.srcObject.getTracks().forEach(t => t.stop());
+            document.getElementById('cameraBox').style.display = 'none';
+            document.getElementById('captureBtn').style.display = 'none';
+            document.getElementById('startCameraBtn').style.display = 'inline-flex';
+            document.getElementById('startCameraBtn').textContent = '📷 Retake';
+        });
+
+        // File upload
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            capturedBlob = file;
+            document.getElementById('preview').src = URL.createObjectURL(file);
+            document.getElementById('previewWrap').style.display = 'block';
+        });
+
+        // Submit: send everything as multipart form
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!capturedBlob) {
+                showToast('Please capture or upload a face photo', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Registering...';
+
+            const fd = new FormData();
+            fd.append('name', document.getElementById('name').value);
+            fd.append('email', document.getElementById('email').value);
+            fd.append('student_id', document.getElementById('studentId').value);
+            fd.append('department', document.getElementById('department').value);
+            fd.append('photo', capturedBlob, 'face.jpg');
+
+            try {
+                await apiPostForm('/students', fd);
+                showToast('Registration successful!');
+                setTimeout(() => window.location.href = '/students', 1500);
+            } catch (err) {
+                showToast(err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Register';
+            }
+        });
+    </script>
+</body>
+</html>

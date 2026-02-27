@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoAttend - Smart Attendance</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="navbar">
+        <a href="/" class="logo">GoAttend</a>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/attendance">Login</a>
+            <a href="/students">Students</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <div class="hero">
+            <h1>Smart Attendance System</h1>
+            <p>Register your face once, then just look at the camera to mark attendance — fast, accurate, and contactless.</p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="/register" class="btn btn-primary">Register</a>
+                <a href="/attendance" class="btn btn-success">Login / Attendance</a>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalStudents">-</div>
+                <div class="stat-label">Registered Students</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="todayAttendance">-</div>
+                <div class="stat-label">Today's Attendance</div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        (async () => {
+            try {
+                const students = await apiGet('/students');
+                document.getElementById('totalStudents').textContent = students.length;
+                const records = await apiGet('/attendance?limit=200');
+                const today = new Date().toDateString();
+                document.getElementById('todayAttendance').textContent =
+                    records.filter(r => new Date(r.timestamp).toDateString() === today).length;
+            } catch (e) { console.error(e); }
+        })();
+    </script>
+</body>
+</html>

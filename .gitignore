@@ -54,3 +54,10 @@ deploy/certs/*
 
 # Test database
 test.db
+
+venv/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

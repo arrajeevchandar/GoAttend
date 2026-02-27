@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Students - GoAttend</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="navbar">
+        <a href="/" class="logo">GoAttend</a>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/attendance">Login</a>
+            <a href="/students">Students</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h2 class="page-title">Registered Students</h2>
+
+        <div class="card">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Photo</th>
+                            <th>Name</th>
+                            <th>Roll No</th>
+                            <th>Email</th>
+                            <th>Department</th>
+                            <th>Registered</th>
+                        </tr>
+                    </thead>
+                    <tbody id="studentsTable">
+                        <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        (async () => {
+            const tbody = document.getElementById('studentsTable');
+            try {
+                const students = await apiGet('/students');
+                if (students.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No students registered yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = students.map(s => `
+                    <tr>
+                        <td>${s.photo_url
+                            ? `<img src="${s.photo_url}" class="photo-sm" alt="photo">`
+                            : '—'}</td>
+                        <td><strong>${s.name}</strong></td>
+                        <td>${s.student_id}</td>
+                        <td>${s.email}</td>
+                        <td>${s.department || '—'}</td>
+                        <td>${formatDate(s.created_at)}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">${e.message}</td></tr>`;
+            }
+        })();
+    </script>
+</body>
+</html>
